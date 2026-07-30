@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+
+# Dashboard / unrelated files
+generate_html_report.py
+delta_analysis.html
+floorplan_compare.py
+dashboard.py
+comparison.py
+delta_graphs.py
+main.py
+launcher.py
+make_floor_plan.py
+sensor_viewer.py
+log_viewer.py
+step0_validate_dataset.py
+floor_plan.png
+
+# OS
+.DS_Store
+Thumbs.db
