@@ -1,25 +1,45 @@
-# IAIF — Intelligent Autonomous Infrastructure Framework
+<div align="center">
 
-> **Agentic AI pipeline for smart building HVAC** — runs fully on a Splunk Edge Hub (iMX8M+ NPU), detects anomalies, reasons with a local LLM, auto-corrects setpoints, and learns from every cycle.
+# IAIF
+### Intelligent Autonomous Infrastructure Framework
 
-![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
-![Ollama](https://img.shields.io/badge/LLM-Ollama%20llama3.2-black?logo=ollama)
-![Edge](https://img.shields.io/badge/Hardware-Splunk%20Edge%20Hub%20iMX8M%2B-orange)
-![NPU](https://img.shields.io/badge/NPU-2.3%20TOPS-green)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
+*Agentic AI pipeline for smart building HVAC — fully on-device, no cloud required*
+
+<br/>
+
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Ollama](https://img.shields.io/badge/LLM-llama3.2-000000?style=for-the-badge&logo=ollama&logoColor=white)](https://ollama.ai)
+[![Hardware](https://img.shields.io/badge/Splunk_Edge_Hub-iMX8M%2B-FF6900?style=for-the-badge)](https://www.splunk.com/en_us/products/edge-hub.html)
+[![NPU](https://img.shields.io/badge/NPU-2.3_TOPS-22c55e?style=for-the-badge)](https://www.nxp.com/products/processors-and-microcontrollers/arm-processors/i-mx-applications-processors/i-mx-8-processors/i-mx-8m-plus-arm-cortex-a53-machine-learning-vision-multimedia-and-industrial-iot:IMX8MPLUS)
+[![License](https://img.shields.io/badge/License-MIT-94a3b8?style=for-the-badge)](LICENSE)
+
+<br/>
+
+> IAIF is a fully autonomous HVAC intelligence layer that runs on the **Splunk Edge Hub's onboard NPU**.
+> It detects anomalies through three purpose-built triggers, reasons with a locally-hosted LLM,
+> applies setpoint corrections in under 15 seconds, and builds institutional knowledge of the building
+> over time — without retraining the model or touching the cloud.
+
+</div>
 
 ---
 
-## Pipeline Design Documents
+## Table of Contents
 
-| | File | Description |
-|---|---|---|
-| **V1** | [`Pipeline_suggestion_1.pdf`](Pipeline_suggestion_1.pdf) | Initial architecture — Edge Hub → LLM → CBC Orchestrator → Telegram |
-| **V2** | [`Pipeline_suggestion_2.pdf`](Pipeline_suggestion_2.pdf) | Added **Signal Lookout** gate + agentic learning loop |
+- [Architecture Overview](#architecture-overview)
+- [Parameters & Foundational Logic](#parameters--foundational-logic)
+- [How It Works](#how-it-works)
+  - [The Agentic Learning Loop](#the-agentic-learning-loop)
+  - [Signal Lookout — 3 Triggers](#signal-lookout--3-triggers)
+  - [V1 → V2 Evolution](#v1--v2-evolution)
+- [Performance vs Standard Splunk Edge Hub](#performance-vs-standard-splunk-edge-hub)
+- [Component Reference](#component-reference)
+- [Quick Start](#quick-start)
+- [Hardware Specs](#hardware-specs)
 
 ---
 
-## Full Pipeline — V2
+## Architecture Overview
 
 ```mermaid
 flowchart TD
@@ -78,154 +98,224 @@ flowchart TD
 
 ---
 
-## What Each Component Does
+## Parameters & Foundational Logic
 
-| Component | File | Role |
+IAIF makes every decision based on a defined set of physical and operational parameters. There are no black-box thresholds — every trigger condition and correction boundary is explicit.
+
+### Input Parameters (per cycle, per zone)
+
+| Parameter | Source | Unit | Used By |
+|---|---|---|---|
+| `zone_temp` | VAV onboard sensor | °F | Signal Lookout, Prompt Assembly |
+| `setpoint` | BMS / operator config | °F | Signal Lookout, AI Orchestrator |
+| `deviation` | `zone_temp − setpoint` | °F | All components |
+| `humidity` | Onboard sensor | % RH | Prompt Assembly (comfort context) |
+| `occupancy` | Cisco WiFi device count | devices | Prompt Assembly (load context) |
+| `poe_watts` | Cisco Catalyst PoE switch | W | Signal Lookout Trigger 2 (EFE) |
+| `outdoor_temp` | Open-Meteo Weather API | °F | Prompt Assembly (thermal load) |
+| `zone_online` | Heartbeat / MQTT status | bool | Signal Lookout Trigger 0 |
+
+### Foundational Decision Logic
+
+IAIF operates on three foundational principles that distinguish it from conventional rule-based HVAC control:
+
+**1 — Gate before reason.**
+The LLM is expensive relative to a 2.3 TOPS NPU budget. Signal Lookout runs a deterministic pre-filter every cycle. Only anomalous states reach the LLM — normal states are logged and silently passed. This keeps NPU utilization below 30% and LLM invocations under 25/day.
+
+**2 — Inject memory, not just data.**
+A standard LLM prompt contains sensor readings. An IAIF prompt also contains the last N successful corrections for that zone and trigger pattern, ranked by relevance. The LLM's reasoning is grounded in what actually worked in this specific building, not just what works in general.
+
+**3 — Close the loop.**
+Every correction is recorded as `pending`. One cycle later, `verify_outcome()` checks whether the zone temperature recovered within ±2 °F of setpoint. The record is marked `SUCCESS` or `FAILED` and the signal confidence score for that zone/trigger pair is updated. Over time, high-confidence corrections are applied immediately; low-confidence ones are escalated to the engineer.
+
+### Correction Bounds
+
+The AI Orchestrator enforces hard safety limits regardless of LLM output:
+
+| Parameter | Bound | Reason |
 |---|---|---|
-| 🔍 **Signal Lookout** | `edge/signal_lookout.py` | Gates the LLM — only fires when anomaly detected |
-| 🧠 **Knowledge Store** | `edge/knowledge_store.py` | Stores outcomes, retrieves past learnings for future prompts |
-| 📝 **Prompt Assembly** | `edge/prompt_assembly.py` | Builds structured LLM prompt from sensors + memory |
-| 🤖 **Ollama LLM** | `edge/ollama_client.py` | Local inference on NPU — no cloud required |
-| ⚙️ **AI Orchestrator** | `edge/edge_hub.py` | Applies corrections, feeds outcome back to Knowledge Store |
-| 🏢 **CBC Controller** | `cvc/cvc_orchestrator.py` | Cross-hub aggregation, escalates building-wide events |
-| 📱 **Telegram Bot** | `controller/telegram_bot.py` | Pipeline A (engineer) + Pipeline B (operator critical alert) |
+| Max single-cycle setpoint delta | ±5 °F | Prevents thermal shock |
+| Min absolute setpoint | 65 °F | Occupant safety floor |
+| Max absolute setpoint | 82 °F | Occupant safety ceiling |
+| Tolerance band (verify_outcome) | ±2 °F | Defines recovery success |
+| EFE trigger threshold | 15% over expected | Catches power anomalies |
 
----
+### Belief Divergence Formula
 
-## The Agentic Learning Loop
-
-What makes this genuinely agentic vs just automated:
+Signal Lookout Trigger 1 computes a building-wide stress index each cycle:
 
 ```
-Cycle N          Signal Lookout fires (VAV-6 +7°F)
-                       │
-                       ▼
-              Knowledge Store retrieves:
-              "Last Tuesday same pattern → -3°F worked in 1 cycle"
-                       │
-                       ▼
-              LLM reasons with history → applies -3°F
-                       │
-                 record_correction()
-                       │
-Cycle N+1      verify_outcome() → temp recovered? → SUCCESS
-                       │
-              Knowledge Store updated:
-              "VAV-6 solar gain: -3°F success rate 19/20"
-```
+belief_divergence = (zones_overheating + zones_undercooled) / total_active_zones
 
-Over time the system builds **institutional knowledge** about the building — solar patterns, server room cold bleeds, occupancy spikes — without retraining the LLM.
-
----
-
-## V1 vs V2 — What Changed
-
-```
-V1:  sensors → LLM every 15 min regardless     ← wasteful, no memory
-
-V2:  sensors → Signal Lookout → anomaly?
-                    │ YES → Knowledge Store → Prompt Assembly → LLM → correct
-                    │ NO  → ask IoT Engineer (human in the loop)
-                    └────────────────────────────────────────────────────────
-                              LLM learns from every outcome via Knowledge Store
+threshold_moderate  = 0.20   →  escalate to IoT engineer
+threshold_critical  = 0.40   →  invoke LLM + alert building operator
 ```
 
 ---
 
-## Signal Lookout — 3 IAIF Triggers
+## How It Works
 
-| Trigger | What it detects | Severity |
-|---|---|---|
-| **Sensor Loss** | VAV goes offline mid-cycle | Critical |
-| **Belief Divergence** | `(overheating + undercooled zones) / total` > threshold | Moderate / Critical |
-| **EFE Error** | Actual PoE watts vs expected > 15% | Moderate |
+### The Agentic Learning Loop
+
+What separates IAIF from rule-based automation is that it learns from every correction cycle. The Knowledge Store acts as the system's institutional memory — accumulating zone-specific patterns over time without any model retraining.
+
+```
+Cycle N     ─── Signal Lookout fires (VAV-6: +7°F above setpoint)
+                          │
+                          ▼
+               Knowledge Store retrieves prior context:
+               "Last Tuesday, same solar-gain pattern on VAV-6
+                → applied −3°F → recovered in 1 cycle"
+                          │
+                          ▼
+               LLM reasons with history → applies −3°F correction
+                          │
+                    record_correction()
+                          │
+Cycle N+1   ─── verify_outcome() → temperature recovered → SUCCESS
+                          │
+               Knowledge Store updated:
+               "VAV-6 solar gain: −3°F · success rate 19/20"
+```
+
+Over time the system develops **institutional knowledge** about the building's micro-patterns — morning solar gain on south-facing zones, server room cold bleeds overnight, peak occupancy spikes — all without touching the model weights.
 
 ---
 
-## Run the Demo
+### Signal Lookout — 3 Triggers
 
-```bash
-# Clone and run — no setup needed (mock LLM responses built in)
-git clone https://github.com/Adityaagulatii/edge_ai.git
-cd edge_ai
-python -X utf8 iaif_mini_demo.py
+Signal Lookout is the decision gate that prevents the LLM from being invoked on every 15-minute cycle. It fires only when one of three anomaly conditions is met:
 
-# With real Ollama
-ollama pull llama3.2
-python -X utf8 iaif_mini_demo.py --live
+| # | Trigger | Detection Logic | Severity |
+|:---:|---|---|:---:|
+| 0 | **Sensor Loss** | VAV zone drops offline mid-cycle | 🔴 Critical |
+| 1 | **Belief Divergence** | `(overheating zones + undercooled zones) / total` exceeds threshold | 🟡 Moderate · 🔴 Critical |
+| 2 | **EFE Error** | Actual PoE watts vs. expected model > 15% delta | 🟡 Moderate |
+
+When no trigger fires, Signal Lookout routes to the **IoT Engineer** for human review rather than invoking the LLM — keeping the human in the loop for ambiguous states.
+
+---
+
+### V1 → V2 Evolution
+
+```
+V1  ─── sensors → LLM (every 15 min, regardless of state)
+         · 96 LLM calls/day · no memory · no learning
+
+V2  ─── sensors → Signal Lookout → anomaly detected?
+                        │
+              YES ──────┼──▶ Knowledge Store ──▶ Prompt Assembly ──▶ LLM ──▶ Correct
+                        │                                                         │
+              NO  ──────┴──▶ IoT Engineer (human review)           record_correction()
+                                                                              │
+                                                               verify_outcome() next cycle
+                                                                              │
+                                                               Knowledge Store updated
 ```
 
 ---
 
-## Why This Beats Standard Splunk Edge Hub
+## Performance vs Standard Splunk Edge Hub
 
-| Capability | Splunk Edge (standard) | IAIF Pipeline V2 |
-|---|---|---|
-| Anomaly detection | Threshold rules only | Signal Lookout — 3 intelligent triggers |
-| LLM invoked | — | Only when anomaly detected |
-| Learns from outcomes | ❌ | ✅ Knowledge Store |
-| Auto setpoint correction | ❌ human needed | ✅ < 15 seconds |
-| Cross-hub awareness | ❌ | ✅ CBC Orchestrator |
-| Asks human if borderline | ❌ | ✅ IoT Engineer prompt |
-| Works fully offline | ⚠️ partial | ✅ fully local |
-| Time to correction | 15–45 min | < 15 sec |
-
----
-
-## By The Numbers — IAIF vs Standard Splunk Edge Hub
-
-> Measurements based on simulated 30-day building operation (26 VAV zones, 5 hubs).
+> Figures based on 30-day simulated operation across 26 VAV zones and 5 hubs.
 
 ### Response Time
 
-| Scenario | Standard Edge Hub | IAIF V2 |
-|---|---|---|
-| Zone overheating detected | ~15–45 min (human on-call) | **< 15 sec** (auto-corrected) |
-| Multi-hub critical event | 30–60 min (manual escalation) | **< 30 sec** (CBC Orchestrator) |
-| Sensor offline recovery | Manual ticket → hours | **Immediate** (Trigger 0 alert) |
+| Event | Standard Edge Hub | IAIF V2 | Improvement |
+|---|---|---|:---:|
+| Zone overheating detected | 15 – 45 min *(human on-call)* | **< 15 sec** | **~120×** |
+| Multi-hub critical event | 30 – 60 min *(manual escalation)* | **< 30 sec** | **~60×** |
+| Sensor offline recovery | Hours *(manual ticket)* | **Immediate** | — |
 
 ### Compute Efficiency
 
-| Metric | V1 (LLM every cycle) | V2 (Signal Lookout gated) |
-|---|---|---|
-| LLM invocations per 24h | 96 (every 15 min) | **~18–24** (anomaly-only) |
-| NPU utilization | Continuous | **< 30% of cycles** |
-| Redundant LLM calls saved | — | **~75–80%** |
-| Tokens processed per day | ~115 K | **~22 K** |
+| Metric | V1 — Naive LLM | V2 — Gated LLM | Saving |
+|---|:---:|:---:|:---:|
+| LLM invocations / 24 h | 96 | ~18 – 24 | **75 – 80%** |
+| Tokens processed / day | ~115 K | ~22 K | **81%** |
+| NPU utilization | Continuous | < 30% of cycles | **70%+** |
 
-### Correction Accuracy (Knowledge Store Learning Curve)
+### Correction Accuracy — Knowledge Store Learning Curve
 
-| Stage | Success Rate | What drives it |
-|---|---|---|
-| Week 1 (cold start) | ~58% | LLM reasoning alone, no history |
-| Week 2 | ~74% | First learning cycle — 1 week of outcomes |
-| Month 1 | ~87% | Zone-specific patterns established |
-| Month 3+ | **~93%** | Solar gain, occupancy spikes, cold bleeds all modelled |
+| Timeframe | Success Rate | Driver |
+|---|:---:|---|
+| Week 1 *(cold start)* | ~58% | LLM general reasoning only |
+| Week 2 | ~74% | First full week of outcomes ingested |
+| Month 1 | ~87% | Zone-specific correction patterns established |
+| Month 3+ | **~93%** | Solar gain, cold bleeds, occupancy spikes all modelled |
 
-### Alert Noise Reduction
+### Alert Quality
 
-| Alert type | Standard (threshold rules) | IAIF V2 |
-|---|---|---|
-| False positive threshold alerts/day | 40–60 | **< 5** |
-| Escalations requiring engineer action | ~12/day | **~2/day** |
-| Auto-resolved without human | 0% | **~85%** |
-| Engineer notified only when | Always | **LLM uncertain or cross-hub critical** |
+| Metric | Standard *(threshold rules)* | IAIF V2 |
+|---|:---:|:---:|
+| False positive alerts / day | 40 – 60 | **< 5** |
+| Engineer escalations / day | ~12 | **~2** |
+| Events auto-resolved | 0% | **~85%** |
 
-### Energy Impact (26-zone building, simulated)
+### Thermal Comfort (26-zone building)
 
 | Metric | Without IAIF | With IAIF |
-|---|---|---|
-| Avg zone deviation from setpoint | ±4.2°F | **±1.1°F** |
-| Time zones in ±2°F comfort band | ~51% | **~89%** |
-| HVAC overcooling/overheating cycles | ~34/day | **~7/day** |
+|---|:---:|:---:|
+| Avg zone deviation from setpoint | ±4.2 °F | **±1.1 °F** |
+| Time within ±2 °F comfort band | ~51% | **~89%** |
+| HVAC overcycle events / day | ~34 | **~7** |
 | Estimated energy waste from drift | baseline | **~18% reduction** |
 
 ---
 
-## Hardware
+## Component Reference
+
+| Component | Source | Responsibility |
+|---|---|---|
+| 🟢 **Signal Lookout** | `edge/signal_lookout.py` | Anomaly gate — prevents unnecessary LLM invocation |
+| 🟣 **Knowledge Store** | `edge/knowledge_store.py` | Agentic memory — stores corrections, verifies outcomes, injects history |
+| ⬜ **Prompt Assembly** | `edge/prompt_assembly.py` | Constructs structured LLM prompt from sensors + retrieved memory |
+| 🟡 **Ollama LLM** | `edge/ollama_client.py` | Local inference on NPU — llama3.2, no cloud dependency |
+| 🔵 **AI Orchestrator** | `edge/edge_hub.py` | Applies BACnet setpoint corrections, feeds outcome back to Knowledge Store |
+| ⬜ **CBC Controller** | `cvc/cvc_orchestrator.py` | Cross-hub aggregation, building-wide event escalation |
+| ⬜ **Telegram Bot** | `controller/telegram_bot.py` | Pipeline A: engineer digest · Pipeline B: operator critical alert |
+
+---
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/Adityaagulatii/edge_ai.git
+cd edge_ai
+
+# Run the demo (no dependencies — mock LLM responses built in)
+python -X utf8 iaif_mini_demo.py
+```
+
+```bash
+# Run with a live Ollama instance
+ollama pull llama3.2
+python -X utf8 iaif_mini_demo.py --live
+```
+
+The demo cycles through three pre-built scenarios:
+1. **Solar gain** — Hub-2 VAV-6 overheating (+7 °F above setpoint)
+2. **Server cold bleed** — VAV-8 undercooled (−5.8 °F)
+3. **Multi-hub critical** — Hub-4 VAV-20 severe overheat (+10 °F), CBC escalation triggered
+
+---
+
+## Hardware Specs
 
 **Splunk Edge Hub** — Toradex Verdin iMX8M Plus SoM
-- CPU: 4× ARM Cortex-A53 @ 1.8 GHz
-- NPU: Vivante VIP8000 — **2.3 TOPS** (INT8)
-- RAM: 8 GB LPDDR4 · Storage: 32 GB eMMC
-- ML: TensorFlow Lite, ONNX Runtime, PyTorch via NXP eIQ
+
+| Component | Specification |
+|---|---|
+| CPU | 4× ARM Cortex-A53 @ 1.8 GHz |
+| NPU | NXP Vivante VIP8000 — **2.3 TOPS** (INT8) |
+| RAM | 8 GB LPDDR4 |
+| Storage | 32 GB eMMC |
+| ML Runtimes | TensorFlow Lite · ONNX Runtime · PyTorch via NXP eIQ |
+| Protocols | MQTT · OPC-UA · Modbus TCP · SNMP · Splunk Universal Forwarder |
+
+---
+
+<div align="center">
+<sub>Built on the Splunk Edge Hub platform · Designed for on-premise, air-gapped deployments</sub>
+</div>
