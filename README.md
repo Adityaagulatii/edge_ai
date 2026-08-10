@@ -31,7 +31,6 @@
 - [How It Works](#how-it-works)
   - [The Agentic Learning Loop](#the-agentic-learning-loop)
   - [Signal Lookout — 3 Triggers](#signal-lookout--3-triggers)
-  - [V1 → V2 Evolution](#v1--v2-evolution)
 - [Performance vs Standard Splunk Edge Hub](#performance-vs-standard-splunk-edge-hub)
 - [Component Reference](#component-reference)
 - [Quick Start](#quick-start)
@@ -193,25 +192,6 @@ Signal Lookout is the decision gate that prevents the LLM from being invoked on 
 | 2 | **EFE Error** | Actual PoE watts vs. expected model > 15% delta | 🟡 Moderate |
 
 When no trigger fires, Signal Lookout routes to the **IoT Engineer** for human review rather than invoking the LLM — keeping the human in the loop for ambiguous states.
-
----
-
-### V1 → V2 Evolution
-
-```
-V1  ─── sensors → LLM (every 15 min, regardless of state)
-         · 96 LLM calls/day · no memory · no learning
-
-V2  ─── sensors → Signal Lookout → anomaly detected?
-                        │
-              YES ──────┼──▶ Knowledge Store ──▶ Prompt Assembly ──▶ LLM ──▶ Correct
-                        │                                                         │
-              NO  ──────┴──▶ IoT Engineer (human review)           record_correction()
-                                                                              │
-                                                               verify_outcome() next cycle
-                                                                              │
-                                                               Knowledge Store updated
-```
 
 ---
 
