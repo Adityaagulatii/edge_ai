@@ -28,60 +28,7 @@
 
 ## Architecture Overview
 
-```mermaid
-flowchart TD
-    subgraph INPUTS["📡 External Data Sources"]
-        W(["🌤️ Open-Meteo\nWeather API"])
-        WF(["📶 Cisco WiFi\nDevice Count"])
-        PM(["⚡ Smart Power\nMeter per Zone"])
-        POE(["🔌 Cisco Catalyst\nPoE Switch"])
-    end
-
-    subgraph EDGE["🖥️ Splunk Edge Hub — iMX8M+ 8GB NPU (2.3 TOPS)"]
-        direction TB
-        S(["🌡️ Onboard Sensors\ntemp · humidity · light · sound"])
-        SL["🔍 Signal Lookout\n━━━━━━━━━━━━━━\nTrigger 0: Sensor Loss\nTrigger 1: Belief Divergence\nTrigger 2: EFE Error"]
-        KS[("🧠 Knowledge Store\n━━━━━━━━━━━━━━\nstores past corrections\nlearns what works\nreturns context")]
-        PA["📝 Prompt Assembly\n━━━━━━━━━━━━━━\nsensor context\n+ past learnings"]
-        LLM["🤖 Ollama LLM\nllama3.2\nARM NEON + NPU\n(fully local)"]
-        AO["⚙️ AI Orchestrator\n━━━━━━━━━━━━━━\napplies setpoint\nadjustments\nvia BACnet"]
-        MQ["📨 MQTT Broker\n+ Splunk Forwarder"]
-    end
-
-    subgraph CBC["🏢 CBC Controller — Single Node OpenShift"]
-        SE["📊 Splunk Enterprise\nindex + search"]
-        TB["📱 Telegram Bot"]
-        IOT["👨‍💻 IoT Engineer\nDirect SPL Query\n15-min poll"]
-        BO(["🏗️ Building Operator\nAcknowledge / Override"])
-    end
-
-    INPUTS --> SL
-    S --> SL
-
-    SL -->|"anomaly\ndetected"| KS
-    KS -->|"past context\ninjected"| PA
-    PA --> LLM
-    LLM -->|"recommendation\n+ ADJUST commands"| AO
-    AO -->|"outcome\nnext cycle"| KS
-    AO --> MQ
-    SL -->|"nothing detected\nask engineer"| IOT
-
-    MQ --> SE
-    SE --> IOT
-    IOT -->|"manual override"| AO
-    SE --> TB
-    TB -->|"Pipeline A\nengineer summary"| IOT
-    TB -->|"Pipeline B\ncritical alert"| BO
-    BO -->|"acknowledge\nor override"| AO
-
-    style SL fill:#22c55e,color:#fff,stroke:#16a34a
-    style KS fill:#8b5cf6,color:#fff,stroke:#7c3aed
-    style LLM fill:#f59e0b,color:#1e293b,stroke:#d97706
-    style AO fill:#06b6d4,color:#fff,stroke:#0891b2
-    style EDGE fill:#1e293b,color:#fff,stroke:#334155
-    style CBC fill:#f0f9ff,color:#1e293b,stroke:#bae6fd
-    style INPUTS fill:#fefce8,color:#1e293b,stroke:#fde68a
-```
+![IAIF Pipeline](images/pipeline.png)
 
 ---
 
@@ -189,42 +136,15 @@ When no trigger fires, Signal Lookout routes to the **IoT Engineer** for human r
 
 ### LLM Compute — V1 (no gate) vs V2 (Signal Lookout)
 
-```mermaid
-xychart-beta
-    title "LLM Invocations per 24 h"
-    x-axis ["V1 — No Gate", "V2 — Signal Lookout"]
-    y-axis "Calls / day" 0 --> 100
-    bar [96, 21]
-```
+![LLM Calls](images/llm_calls.png)
 
 ### Knowledge Store — Correction Accuracy Over Time
 
-```mermaid
-xychart-beta
-    title "Correction Success Rate (%)"
-    x-axis ["Week 1", "Week 2", "Month 1", "Month 3+"]
-    y-axis "Success Rate (%)" 50 --> 100
-    line [58, 74, 87, 93]
-```
-
-### Event Resolution Breakdown (IAIF V2)
-
-```mermaid
-pie title "How Events Are Handled"
-    "Auto-resolved < 15 sec" : 85
-    "Escalated to IoT Engineer" : 13
-    "Critical — Building Operator" : 2
-```
+![Learning Curve](images/learning_curve.png)
 
 ### Thermal Comfort — Zone Deviation from Setpoint
 
-```mermaid
-xychart-beta
-    title "Avg Zone Deviation from Setpoint (deg F)"
-    x-axis ["Without IAIF", "With IAIF"]
-    y-axis "Deviation (deg F)" 0 --> 5
-    bar [4.2, 1.1]
-```
+![Thermal Comfort](images/thermal.png)
 
 ### Response Time Summary
 
