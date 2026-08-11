@@ -197,49 +197,54 @@ When no trigger fires, Signal Lookout routes to the **IoT Engineer** for human r
 
 ## Performance vs Standard Splunk Edge Hub
 
-> Figures based on 30-day simulated operation across 26 VAV zones and 5 hubs.
+> **⚠️ Synthetic Data** — Figures are generated from a simulated 30-day run across 26 VAV zones and 5 hubs. No real building data was used.
 
-### Response Time
+### LLM Compute — V1 (no gate) vs V2 (Signal Lookout)
 
-| Event | Standard Edge Hub | IAIF V2 | Improvement |
-|---|---|---|:---:|
-| Zone overheating detected | 15 – 45 min *(human on-call)* | **< 15 sec** | **~120×** |
-| Multi-hub critical event | 30 – 60 min *(manual escalation)* | **< 30 sec** | **~60×** |
-| Sensor offline recovery | Hours *(manual ticket)* | **Immediate** | — |
+```mermaid
+xychart-beta
+    title "LLM Invocations per 24 h"
+    x-axis ["V1 — No Gate", "V2 — Signal Lookout"]
+    y-axis "Calls / day" 0 --> 100
+    bar [96, 21]
+```
 
-### Compute Efficiency
+### Knowledge Store — Correction Accuracy Over Time
 
-| Metric | V1 — Naive LLM | V2 — Gated LLM | Saving |
+```mermaid
+xychart-beta
+    title "Correction Success Rate (%)"
+    x-axis ["Week 1", "Week 2", "Month 1", "Month 3+"]
+    y-axis "Success Rate (%)" 50 --> 100
+    line [58, 74, 87, 93]
+```
+
+### Event Resolution Breakdown (IAIF V2)
+
+```mermaid
+pie title "How Events Are Handled"
+    "Auto-resolved < 15 sec" : 85
+    "Escalated to IoT Engineer" : 13
+    "Critical — Building Operator" : 2
+```
+
+### Thermal Comfort — Zone Deviation from Setpoint
+
+```mermaid
+xychart-beta
+    title "Avg Zone Deviation from Setpoint (deg F)"
+    x-axis ["Without IAIF", "With IAIF"]
+    y-axis "Deviation (deg F)" 0 --> 5
+    bar [4.2, 1.1]
+```
+
+### Response Time Summary
+
+| Event | Standard Edge Hub | IAIF V2 | Speedup |
 |---|:---:|:---:|:---:|
-| LLM invocations / 24 h | 96 | ~18 – 24 | **75 – 80%** |
-| Tokens processed / day | ~115 K | ~22 K | **81%** |
-| NPU utilization | Continuous | < 30% of cycles | **70%+** |
-
-### Correction Accuracy — Knowledge Store Learning Curve
-
-| Timeframe | Success Rate | Driver |
-|---|:---:|---|
-| Week 1 *(cold start)* | ~58% | LLM general reasoning only |
-| Week 2 | ~74% | First full week of outcomes ingested |
-| Month 1 | ~87% | Zone-specific correction patterns established |
-| Month 3+ | **~93%** | Solar gain, cold bleeds, occupancy spikes all modelled |
-
-### Alert Quality
-
-| Metric | Standard *(threshold rules)* | IAIF V2 |
-|---|:---:|:---:|
-| False positive alerts / day | 40 – 60 | **< 5** |
-| Engineer escalations / day | ~12 | **~2** |
-| Events auto-resolved | 0% | **~85%** |
-
-### Thermal Comfort (26-zone building)
-
-| Metric | Without IAIF | With IAIF |
-|---|:---:|:---:|
-| Avg zone deviation from setpoint | ±4.2 °F | **±1.1 °F** |
-| Time within ±2 °F comfort band | ~51% | **~89%** |
-| HVAC overcycle events / day | ~34 | **~7** |
-| Estimated energy waste from drift | baseline | **~18% reduction** |
+| Zone overheating | 15 – 45 min | **< 15 sec** | ~120× |
+| Multi-hub critical | 30 – 60 min | **< 30 sec** | ~60× |
+| Sensor offline | Hours | **Immediate** | — |
 
 ---
 
