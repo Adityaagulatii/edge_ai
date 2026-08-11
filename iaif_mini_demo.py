@@ -242,7 +242,7 @@ def main():
     mode = f"{CYAN}LIVE Ollama{RESET}" if USE_LIVE_LLM else f"{YELLOW}Mock LLM responses{RESET}"
     header(f"IAIF Mini Pipeline Demo  [{mode}]")
     print(f"""
-  Demonstrates the Intelligent Autonomous Infrastructure Framework (IAIF)
+  Demonstrates the Interval Action Inference Framework (IAIF)
   running on a Splunk Edge Hub to manage HVAC in a Boston office building.
 
   Each scenario shows the SAME sensor data processed two ways:

@@ -1,19 +1,7 @@
 <div align="center">
 
 # IAIF
-### Intelligent Autonomous Infrastructure Framework
-
-*Agentic AI pipeline for smart building HVAC — fully on-device, no cloud required*
-
-<br/>
-
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Ollama](https://img.shields.io/badge/LLM-llama3.2-000000?style=for-the-badge&logo=ollama&logoColor=white)](https://ollama.ai)
-[![Hardware](https://img.shields.io/badge/Splunk_Edge_Hub-iMX8M%2B-FF6900?style=for-the-badge)](https://www.splunk.com/en_us/products/edge-hub.html)
-[![NPU](https://img.shields.io/badge/NPU-2.3_TOPS-22c55e?style=for-the-badge)](https://www.nxp.com/products/processors-and-microcontrollers/arm-processors/i-mx-applications-processors/i-mx-8-processors/i-mx-8m-plus-arm-cortex-a53-machine-learning-vision-multimedia-and-industrial-iot:IMX8MPLUS)
-[![License](https://img.shields.io/badge/License-MIT-94a3b8?style=for-the-badge)](LICENSE)
-
-<br/>
+### Interval Action Inference Framework
 
 > IAIF is a fully autonomous HVAC intelligence layer that runs on the **Splunk Edge Hub's onboard NPU**.
 > It detects anomalies through three purpose-built triggers, reasons with a locally-hosted LLM,
